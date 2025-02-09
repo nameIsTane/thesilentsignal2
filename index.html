@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TheSilentSignal - Terminal</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+    
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;          /* Use full viewport height */
+      background-color: #000; 
+      font-family: 'VT323', monospace;
+      color: #00ff00;
+      font-size: 1.0rem;
+      line-height: 1.0;
+      overflow: hidden;      /* We'll manage scrolling within our container */
+      position: relative;
+    }
+
+    /* Subtle CRT scan line effect */
+    body::before {
+      content: "";
+      position: absolute;
+      top: 0; 
+      left: 0;
+      width: 100%; 
+      height: 100%;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(0,255,0,0.02),
+          rgba(0,255,0,0.02) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+      mix-blend-mode: lighten;
+    }
+
+    /*
+      Main container as a column flex layout:
+        1) a scrolling output area
+        2) a fixed/sticky prompt at the bottom
+    */
+    .terminal-screen {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;         /* Fill the viewport height */
+      box-sizing: border-box;
+      /* Optional: add some padding on the sides if you like */
+      padding: 1rem;
+      text-shadow: 0 0 1px #00ff00;
+    }
+
+    /* Scrollable area for all command outputs */
+    .output {
+      flex: 1 1 auto;        /* Let this area grow/shrink */
+      overflow-y: auto;
+      scrollbar-width: thin;
+      margin-bottom: 0.5rem; /* Small gap above the prompt */
+    }
+
+    /*
+      The prompt container is pinned at the bottom 
+      using 'position: sticky' within the flex container.
+    */
+    .prompt-container {
+      flex: 0 0 auto;        /* Don’t let it shrink; it should stay visible */
+      position: sticky;
+      bottom: 0;
+      background-color: #000;
+      padding: 0.5rem 0;     /* Some spacing around the prompt */
+      display: flex;
+      align-items: center;
+      cursor: text;          /* Shows text cursor on hover/click */
+    }
+
+    .prompt-container span {
+      margin-right: 0.3rem;
+    }
+
+    #typed-command {
+      white-space: pre; /* preserves typed spacing */
+    }
+
+    .blinking-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 20px;
+      background-color: #00ff00;
+      vertical-align: bottom;
+      animation: blink 1s step-start infinite;
+      margin-left: 2px; 
+    }
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    /* The real input is visually hidden but still focusable */
+    #cli-input {
+      position: absolute;
+      left: -9999px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Optional glitch effect */
+    .glitch {
+      position: relative;
+      display: inline-block;
+    }
+    .glitch::before,
+    .glitch::after {
+      content: attr(data-text);
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0.8;
+      color: #00ff00;
+      background: transparent;
+      clip: rect(0, 9999px, 0, 0);
+    }
+    .glitch::before {
+      animation: glitch-anim 2s infinite linear alternate-reverse;
+    }
+    .glitch::after {
+      animation: glitch-anim2 2s infinite linear alternate-reverse;
+    }
+    @keyframes glitch-anim {
+      0% {
+        clip: rect(86px, 9999px, 30px, 0);
+        transform: skew(0.3deg);
+      }
+      50% {
+        clip: rect(10px, 9999px, 85px, 0);
+        transform: skew(0.2deg);
+      }
+      100% {
+        clip: rect(47px, 9999px, 10px, 0);
+        transform: skew(0.4deg);
+      }
+    }
+    @keyframes glitch-anim2 {
+      0% {
+        clip: rect(57px, 9999px, 10px, 0);
+        transform: skew(0.4deg);
+      }
+      50% {
+        clip: rect(25px, 9999px, 75px, 0);
+        transform: skew(0.2deg);
+      }
+      100% {
+        clip: rect(10px, 9999px, 53px, 0);
+        transform: skew(0.3deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="terminal-screen">
+    
+    <!-- Example top lines -->
+    <div>The Silent Signal Termlink</div>
+    <div id="clearance-line">Clearance: RESTRICTED</div>
+    <br />
+    <div>[Programs]</div>
+    <div>[Logs]</div>
+    <div>[Access]</div>
+    <br />
+    <div id="current-time"></div>
+    
+    <!-- Scrolling output area -->
+    <div class="output" id="cli-output">
+      <div>Listening... Decoding... The Silent Signal awaits...
+Enter a comand:</div>
+    </div>
+
+    <!-- Sticky prompt pinned at the bottom -->
+    <div class="prompt-container" id="prompt-area">
+      <span>&gt;</span>
+      <span id="typed-command"></span>
+      <span class="blinking-cursor"></span>
+    </div>
+
+    <!-- Hidden actual input element -->
+    <input 
+      type="text" 
+      id="cli-input" 
+      autocomplete="off" 
+      aria-label="Terminal Input"
+    />
+  </div>
+
+  <script>
+    /* Simple beep on keystrokes */
+    const beepSound = new Audio('js/beep.mp3');
+    beepSound.volume = 0.2; // Adjust as needed
+
+    const cliInput = document.getElementById('cli-input');
+    const cliOutput = document.getElementById('cli-output');
+    const typedCommandSpan = document.getElementById('typed-command');
+    const clearanceLine = document.getElementById('clearance-line');
+    const currentTime = document.getElementById('current-time');
+    const promptArea = document.getElementById('prompt-area');
+
+    /* Update clock every second */
+    function updateTime() {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString();
+      const dateString = now.toLocaleDateString();
+      currentTime.textContent = `[${timeString} - ${dateString}]`;
+    }
+    setInterval(updateTime, 1000);
+    updateTime();
+
+    /* Make the prompt clickable to focus the hidden input */
+    promptArea.addEventListener('click', () => {
+      cliInput.focus();
+      // Scroll the prompt into view, ensuring it's not hidden behind keyboards
+      setTimeout(() => {
+        promptArea.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }, 50);
+    });
+
+    /* Beep on every keydown */
+    cliInput.addEventListener('keydown', (e) => {
+      beepSound.currentTime = 0;
+      beepSound.play();
+    });
+
+    /* Mirror typed text into the #typed-command span */
+    cliInput.addEventListener('input', () => {
+      typedCommandSpan.textContent = cliInput.value;
+    });
+
+    /* Handle Enter -> process command */
+    cliInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const command = cliInput.value.trim();
+        if (command) {
+          handleCommand(command);
+        }
+        cliInput.value = '';
+        typedCommandSpan.textContent = '';
+      }
+    });
+
+    function handleCommand(command) {
+      // Show the user's typed command
+      appendOutput('> ' + command);
+
+      // Show "processing..." line
+      const processingLine = document.createElement('div');
+      processingLine.textContent = '[System: Processing command...]';
+      cliOutput.appendChild(processingLine);
+      cliOutput.scrollTop = cliOutput.scrollHeight;
+
+      // After delay, remove processing line + show response
+      setTimeout(() => {
+        processingLine.remove();
+        const responseText = processCommand(command);
+        if (responseText) appendOutput(responseText);
+      }, 1000);
+    }
+
+    /* Your command logic */
+    function processCommand(command) {
+      let response;
+      switch (command.toLowerCase()) {
+        case 'help':
+          response = "Available commands: HELP, ABOUT, ACCESS, PROTOCOL 33, SIGNAL_33, etc.";
+          break;
+        case 'access':
+          response = "Access page -> <a href='access.html'>Open Access</a>";
+          break;
+        case 'signal_33':
+          response = "<span class='glitch' data-text='Hidden message unlocked'>Hidden message unlocked: 33 is everywhere...</span>";
+          break;
+        case 'protocol 33':
+          clearanceLine.textContent = "Clearance: PERMITTED";
+          response = "PROTOCOL 33 accepted. Clearance updated to PERMITTED.";
+          break;
+        default:
+          response = `Unknown command: ${command}`;
+      }
+      return response;
+    }
+
+    /* Utility to append lines to output and scroll down */
+    function appendOutput(htmlText) {
+      const line = document.createElement('div');
+      line.innerHTML = htmlText;
+      cliOutput.appendChild(line);
+      cliOutput.scrollTop = cliOutput.scrollHeight;
+    }
+
+    /* Auto-focus the hidden input on page load (desktop browsers, etc.) */
+    window.addEventListener('load', () => {
+      cliInput.focus();
+    });
+  </script>
+</body>
+</html>
