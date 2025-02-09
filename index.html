@@ -6,18 +6,18 @@
   <title>TheSilentSignal - Terminal</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
-    
+
     html, body {
       margin: 0;
       padding: 0;
-      height: 100%;          /* Use full viewport height */
+      height: 100%;
       background-color: #000; 
       font-family: 'VT323', monospace;
       color: #00ff00;
-      font-size: 1.0rem;
-      line-height: 1.25;
-      overflow: hidden;      /* We'll manage scrolling within our container */
+      font-size: 1.2rem;
+      overflow: hidden;
       position: relative;
+      line-height: 1.6;
     }
 
     /* Subtle CRT scan line effect */
@@ -40,50 +40,34 @@
       mix-blend-mode: lighten;
     }
 
-    /*
-      Main container as a column flex layout:
-        1) a scrolling output area
-        2) a fixed/sticky prompt at the bottom
-    */
     .terminal-screen {
-      display: flex;
-      flex-direction: column;
-      height: 100vh;         /* Fill the viewport height */
-      box-sizing: border-box;
-      /* Optional: add some padding on the sides if you like */
       padding: 1rem;
       text-shadow: 0 0 1px #00ff00;
+      height: 100%;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
     }
 
-    /* Scrollable area for all command outputs */
     .output {
-      flex: 1 1 auto;        /* Let this area grow/shrink */
+      flex: 1;
       overflow-y: auto;
       scrollbar-width: thin;
-      margin-bottom: 0.5rem; /* Small gap above the prompt */
     }
 
-    /*
-      The prompt container is pinned at the bottom 
-      using 'position: sticky' within the flex container.
-    */
-    .prompt-container {
-      flex: 0 0 auto;        /* Don’t let it shrink; it should stay visible */
-      position: sticky;
-      bottom: 0;
-      background-color: #000;
-      padding: 0.5rem 0;     /* Some spacing around the prompt */
+    .prompt {
       display: flex;
       align-items: center;
-      cursor: text;          /* Shows text cursor on hover/click */
+      margin-top: 0.5rem;
+      cursor: text; /* indicates user can click to type */
     }
 
-    .prompt-container span {
+    .prompt span {
       margin-right: 0.3rem;
     }
 
     #typed-command {
-      white-space: pre; /* preserves typed spacing */
+      white-space: pre; /* preserves spaces if user typed them */
     }
 
     .blinking-cursor {
@@ -101,7 +85,7 @@
       }
     }
 
-    /* The real input is visually hidden but still focusable */
+    /* The real input is off-screen but still focusable */
     #cli-input {
       position: absolute;
       left: -9999px;
@@ -109,7 +93,7 @@
       pointer-events: none;
     }
 
-    /* Optional glitch effect */
+    /* Glitch class (unchanged) */
     .glitch {
       position: relative;
       display: inline-block;
@@ -159,12 +143,48 @@
         transform: skew(0.3deg);
       }
     }
+
+    /* Flicker animation for "Enter command:" (green) */
+    @keyframes flicker {
+      0%   { opacity: 1; }
+      10%  { opacity: 0.3; }
+      20%  { opacity: 1; }
+      28%  { opacity: 0;   }
+      33%  { opacity: 1;   }
+      40%  { opacity: 0.4; }
+      55%  { opacity: 1;   }
+      60%  { opacity: 0.2; }
+      68%  { opacity: 1;   }
+      75%  { opacity: 0.5; }
+      83%  { opacity: 1;   }
+      100% { opacity: 1; }
+    }
+    .flicker {
+      animation: flicker 0.5s linear 1 forwards;
+    }
+
+    /* Flicker to red for "The Silent Signal" */
+    @keyframes flicker-red {
+      0%   { color: #ff0000; } 
+      10%  { color: #700000; }
+      20%  { color: #ff0000; }
+      28%  { color: #300000; }
+      33%  { color: #ff0000; }
+      40%  { color: #800000; }
+      55%  { color: #ff0000; }
+      60%  { color: #400000; }
+      68%  { color: #ff0000; }
+      75%  { color: #900000; }
+      83%  { color: #ff0000; }
+      100% { color: #ff0000; }
+    }
+    .flicker-red {
+      animation: flicker-red 0.5s linear 1 forwards;
+    }
   </style>
 </head>
 <body>
   <div class="terminal-screen">
-    
-    <!-- Example top lines -->
     <div>The Silent Signal Termlink</div>
     <div id="clearance-line">Clearance: RESTRICTED</div>
     <br />
@@ -174,20 +194,15 @@
     <br />
     <div id="current-time"></div>
     
-    <!-- Scrolling output area -->
-    <div class="output" id="cli-output">
-      <div>Listening... Decoding... The Silent Signal awaits...</div>
-      </div>Enter a comand:</div>
-    </div>
+    <!-- Main output area -->
+    <div class="output" id="cli-output"></div>
 
-    <!-- Sticky prompt pinned at the bottom -->
-    <div class="prompt-container" id="prompt-area">
+    <!-- Prompt area -->
+    <div class="prompt" id="prompt-area">
       <span>&gt;</span>
       <span id="typed-command"></span>
       <span class="blinking-cursor"></span>
     </div>
-
-    <!-- Hidden actual input element -->
     <input 
       type="text" 
       id="cli-input" 
@@ -197,18 +212,17 @@
   </div>
 
   <script>
-    /* Simple beep on keystrokes */
     const beepSound = new Audio('js/beep.mp3');
-    beepSound.volume = 0.2; // Adjust as needed
+    beepSound.volume = 0.2; 
 
     const cliInput = document.getElementById('cli-input');
     const cliOutput = document.getElementById('cli-output');
     const typedCommandSpan = document.getElementById('typed-command');
-    const clearanceLine = document.getElementById('clearance-line');
     const currentTime = document.getElementById('current-time');
+    const clearanceLine = document.getElementById('clearance-line');
     const promptArea = document.getElementById('prompt-area');
 
-    /* Update clock every second */
+    // 1) Show live time
     function updateTime() {
       const now = new Date();
       const timeString = now.toLocaleTimeString();
@@ -218,27 +232,23 @@
     setInterval(updateTime, 1000);
     updateTime();
 
-    /* Make the prompt clickable to focus the hidden input */
+    // Focus hidden input on click
     promptArea.addEventListener('click', () => {
       cliInput.focus();
-      // Scroll the prompt into view, ensuring it's not hidden behind keyboards
-      setTimeout(() => {
-        promptArea.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }, 50);
     });
 
-    /* Beep on every keydown */
-    cliInput.addEventListener('keydown', (e) => {
+    // Beep on each keydown
+    cliInput.addEventListener('keydown', () => {
       beepSound.currentTime = 0;
       beepSound.play();
     });
 
-    /* Mirror typed text into the #typed-command span */
+    // Mirror typed text
     cliInput.addEventListener('input', () => {
       typedCommandSpan.textContent = cliInput.value;
     });
 
-    /* Handle Enter -> process command */
+    // Handle Enter key
     cliInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -251,27 +261,28 @@
       }
     });
 
+    // Show user command, process with a delay, then type out response
     function handleCommand(command) {
-      // Show the user's typed command
       appendOutput('> ' + command);
 
-      // Show "processing..." line
       const processingLine = document.createElement('div');
       processingLine.textContent = '[System: Processing command...]';
       cliOutput.appendChild(processingLine);
       cliOutput.scrollTop = cliOutput.scrollHeight;
 
-      // After delay, remove processing line + show response
       setTimeout(() => {
         processingLine.remove();
         const responseText = processCommand(command);
-        if (responseText) appendOutput(responseText);
+        if (responseText) {
+          typeOutText(responseText, cliOutput);
+        }
       }, 1000);
     }
 
-    /* Your command logic */
+    // Updated command logic with exclusive menu for PROTOCOL 33
     function processCommand(command) {
       let response;
+
       switch (command.toLowerCase()) {
         case 'help':
           response = "Available commands: HELP, ABOUT, ACCESS, PROTOCOL 33, SIGNAL_33, etc.";
@@ -283,26 +294,73 @@
           response = "<span class='glitch' data-text='Hidden message unlocked'>Hidden message unlocked: 33 is everywhere...</span>";
           break;
         case 'protocol 33':
+          // Change clearance
           clearanceLine.textContent = "Clearance: PERMITTED";
-          response = "PROTOCOL 33 accepted. Clearance updated to PERMITTED.";
+          // Provide the exclusive menu in the typed response
+          response = 
+            "PROTOCOL 33 accepted. Clearance updated to PERMITTED.<br>" +
+            "Exclusive Menu Access Granted:<br>" +
+            "&bull; [Alpha Access] – Covert infiltration<br>" + 
+            "&bull; [Secret Archives] – Classified logs<br>" + 
+            "&bull; [Cipher Tools] – Encryption/Decryption suite<br>" +
+            "&bull; [Signal Analyzer] – Decode hidden transmissions";
           break;
         default:
           response = `Unknown command: ${command}`;
       }
+
       return response;
     }
 
-    /* Utility to append lines to output and scroll down */
-    function appendOutput(htmlText) {
+    // Appends a line instantly
+    function appendOutput(text) {
       const line = document.createElement('div');
-      line.innerHTML = htmlText;
+      line.innerHTML = text;
       cliOutput.appendChild(line);
       cliOutput.scrollTop = cliOutput.scrollHeight;
+      return line;
     }
 
-    /* Auto-focus the hidden input on page load (desktop browsers, etc.) */
+    // Types out text char by char
+    function typeOutText(text, container, callback) {
+      const newLine = document.createElement('div');
+      container.appendChild(newLine);
+      container.scrollTop = container.scrollHeight;
+
+      let i = 0;
+      const speed = 50; 
+      const typingInterval = setInterval(() => {
+        newLine.innerHTML = text.slice(0, i+1);
+        container.scrollTop = container.scrollHeight;
+        i++;
+
+        if (i >= text.length) {
+          clearInterval(typingInterval);
+          if (callback) callback();
+        }
+      }, speed);
+    }
+
+    // On page load: type out the "Listening..." line, then delay, show "Enter command:" flicker,
+    // then flicker "The Silent Signal" in red
     window.addEventListener('load', () => {
       cliInput.focus();
+      
+      const lineToType = "Listening… Decoding… <span id='theSignalRed'>The Silent Signal</span> awaits…";
+      typeOutText(lineToType, cliOutput, () => {
+        setTimeout(() => {
+          const line = appendOutput("Enter command:");
+          line.classList.add('flicker');
+
+          // Flicker "The Silent Signal" in red after a short delay
+          setTimeout(() => {
+            const signalSpan = document.getElementById('theSignalRed');
+            if (signalSpan) {
+              signalSpan.classList.add('flicker-red');
+            }
+          }, 700);
+        }, 1000);
+      });
     });
   </script>
 </body>
